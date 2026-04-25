@@ -153,3 +153,32 @@ export const getDriftingSpill = (timeIndex: number): FeatureCollection => {
     ]
   };
 };
+
+// Simulating OpenDrift Output: Array of Timesteps -> Array of Particles -> [Lng, Lat]
+export const getOpenDriftTracers = () => {
+  const numTimesteps = 60; // 60 frames of data
+  const numParticles = 300; // 300 tracers simulating the oil
+  const center = [27.915, 43.220]; // Varna Coast
+  
+  const timesteps: [number, number][][] = [];
+  
+  // Frame 0: Initial spill (tightly clustered around the center)
+  let currentParticles = Array.from({ length: numParticles }, () => [
+    center[0] + (Math.random() - 0.5) * 0.004,
+    center[1] + (Math.random() - 0.5) * 0.004
+  ]) as [number, number][];
+  
+  for (let t = 0; t < numTimesteps; t++) {
+     timesteps.push(currentParticles);
+     
+     // Calculate the next frame: Ocean current drift + diffusion (spreading)
+     currentParticles = currentParticles.map(p => [
+         // Drift East (0.0005) + Random diffusion
+         p[0] + 0.0005 + (Math.random() - 0.5) * 0.001, 
+         // Drift North (0.0002) + Random diffusion
+         p[1] + 0.0002 + (Math.random() - 0.5) * 0.001  
+     ]);
+  }
+  
+  return timesteps;
+};
