@@ -2,6 +2,7 @@
 import { useState, useMemo, useEffect } from "react";
 import Map, { Source, Layer, Marker } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
+import NavBar from "./components/NavBar/NavBar";
 // 1. Import both JSON datasets directly
 import rawDriftData from "./data.json";
 import shipTrackData from "./ship_track.json";
@@ -214,13 +215,16 @@ export default function App() {
   };
 
   return (
-    <main style={{ width: "100vw", height: "100vh", position: "relative" }}>
+    <main style={{ width: "100vw", height: "100vh", display: "flex" }}>
+      <NavBar />
+
+      <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
       {/* THE FLOATING UI PANEL */}
       <div
         style={{
           position: "absolute",
           top: 24,
-          left: 24, // Anchored to the top-left!
+          left: 24,
           zIndex: 10,
           background: "white",
           padding: "20px 24px",
@@ -590,6 +594,7 @@ export default function App() {
           </Marker>
         )}
       </Map>
+      </div>
     </main>
   );
 }
