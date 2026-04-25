@@ -182,3 +182,52 @@ export const getOpenDriftTracers = () => {
   
   return timesteps;
 };
+
+export const generateSyncShips = (frames: any[]) => {
+  // Helper to calculate exact hours between the first frame and current frame
+  const getHoursDiff = (startTime: string, currentTime: string) => {
+    const t1 = new Date(startTime).getTime();
+    const t2 = new Date(currentTime).getTime();
+    return (t2 - t1) / (1000 * 60 * 60);
+  };
+
+  const startTime = frames[0].time;
+
+  // Define our 5 ships around the spill area (33.3, 44.2)
+  // Speeds are in Knots (Nautical Miles per Hour)
+  // Headings are in standard degrees (0 = North, 90 = East)
+  const fleet = [
+    { id: 'cargo-1', type: 'Cargo', icon: '🚢', color: '#9ca3af', startLon: 33.8, startLat: 44.3, speedKnots: 18, heading: 260 },
+    { id: 'tanker-1', type: 'Tanker', icon: '⛴️', color: '#8b5cf6', startLon: 32.5, startLat: 43.9, speedKnots: 14, heading: 45 },
+    { id: 'passenger-1', type: 'Passenger', icon: '🛳️', color: '#3b82f6', startLon: 33.1, startLat: 44.6, speedKnots: 22, heading: 170 },
+    { id: 'fishing-1', type: 'Fishing', icon: '⛵', color: '#10b981', startLon: 33.4, startLat: 44.1, speedKnots: 6, heading: 110 },
+    // Emergency vessel speeds towards the spill center
+    { id: 'rescue-1', type: 'Emergency', icon: '🚤', color: '#f59e0b', startLon: 33.0, startLat: 44.0, speedKnots: 32, heading: 0 } 
+  ];
+
+  // Calculate the exact heading for the rescue ship to aim for the spill (33.3, 44.2)
+  const dy = 44.2 - fleet[4].startLat;
+  const dx = (33.3 - fleet[4].startLon) * Math.cos(44.2 * Math.PI / 180); // Adjust for Earth curve
+  fleet[4].heading = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+
+  return frames.map((frame) => {
+    const hoursElapsed = getHoursDiff(startTime, frame.time);
+
+    return fleet.map(ship => {
+      // 1 Knot = 1 Nautical Mile per hour
+      const distanceNm = ship.speedKnots * hoursElapsed;
+      
+      const headingRad = ship.heading * (Math.PI / 180);
+      
+      // 1 Nautical Mile = exactly 1/60th of a degree of Latitude
+      const deltaLat = (distanceNm * Math.cos(headingRad)) / 60;
+      // Adjust Longitude step based on the Earth's curvature at this Latitude
+      const deltaLon = (distanceNm * Math.sin(headingRad)) / (60 * Math.cos(ship.startLat * Math.PI / 180));
+
+      return {
+        ...ship,
+        coordinates: [ ship.startLon + deltaLon, ship.startLat + deltaLat ]
+      };
+    });
+  });
+};
