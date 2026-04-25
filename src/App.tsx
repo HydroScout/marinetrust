@@ -3,9 +3,9 @@ import { useState, useMemo, useEffect } from "react";
 import Map, { Source, Layer, Marker } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import NavBar from "./components/NavBar/NavBar";
-// 1. Import both JSON datasets directly
-import rawDriftData from "./data.json";
-import shipTrackData from "./ship_track.json";
+
+// Point this to your FastAPI server
+const API_BASE_URL = "http://localhost:8000";
 
 // --- TYPES ---
 interface DriftPoint {
@@ -30,101 +30,107 @@ interface DriftData {
   frames: DriftFrame[];
 }
 
-const driftData = rawDriftData as DriftData;
+interface ShipTrackData {
+  timestamps: string[];
+  coordinates: number[][];
+  speeds: number[];
+  courses: number[];
+  collisions: boolean[];
+}
 
-// --- PRE-COMPUTATION ---
-const shipEpochs = shipTrackData.timestamps.map((t) => new Date(t).getTime());
-
-// NEW: Pre-compute the OpenDrift timestamps for instant searching
-const frameEpochs = driftData.frames.map((f) => new Date(f.time).getTime());
-
-// Helper function to find the closest ship coordinate index for a given target time
-const getClosestShipIndex = (targetIsoTime: string) => {
-  const targetTime = new Date(targetIsoTime).getTime();
+// --- PURE HELPER FUNCTION ---
+// Replaces the old hardcoded getClosestFrameIndex / getClosestShipIndex
+const getClosestIndex = (targetTimeMs: number, epochsArray: number[]) => {
   let closestIdx = 0;
   let minDiff = Infinity;
-
-  // The ship tracking array is already sorted chronologically by our Python script!
-  for (let i = 0; i < shipEpochs.length; i++) {
-    const diff = Math.abs(shipEpochs[i] - targetTime);
+  for (let i = 0; i < epochsArray.length; i++) {
+    const diff = Math.abs(epochsArray[i] - targetTimeMs);
     if (diff < minDiff) {
       minDiff = diff;
       closestIdx = i;
     } else if (diff > minDiff) {
-      // Because the array is sorted, if the difference starts growing,
-      // we have passed the closest point and can break the loop early to save CPU.
-      break;
+      break; // Array is sorted, break early
     }
   }
   return closestIdx;
 };
 
-// NEW: Helper to find the closest OpenDrift frame for a chosen Date
-const getClosestFrameIndex = (targetTimeMs: number) => {
-  let closestIdx = 0;
-  let minDiff = Infinity;
-  for (let i = 0; i < frameEpochs.length; i++) {
-    const diff = Math.abs(frameEpochs[i] - targetTimeMs);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closestIdx = i;
-    }
-  }
-  return closestIdx;
-};
-
-// --- AN EMPTY GEOJSON SHELL ---
-// We feed this to the map before a date is picked so it renders nothing.
 const emptyGeoJSON = { type: "FeatureCollection", features: [] };
 
 export default function App() {
   const [timeIndex, setTimeIndex] = useState(0);
-
-  // NEW: Form draft states
   const [draftDate, setDraftDate] = useState("");
   const [draftShipId, setDraftShipId] = useState("");
-
-  // NEW: The master switch that turns on the map layers
   const [isSimulating, setIsSimulating] = useState(false);
-
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const frames = driftData.frames;
+  // NEW: API Data and Loading States
+  const [isLoading, setIsLoading] = useState(false);
+  const [driftData, setDriftData] = useState<DriftData | null>(null);
+  const [shipTrackData, setShipTrackData] = useState<ShipTrackData | null>(null);
 
-  // The function triggered when the user clicks "Check"
-  const handleStartSimulation = () => {
-    if (!draftDate || !draftShipId) return;
+  // Safely extract frames (defaults to empty array if no data)
+  const frames = driftData?.frames || [];
 
-    // TODO: In the next iteration, this is where you will:
-    // const newDriftData = await fetch(`/api/spill?date=${draftDate}`);
-    // const newShipData = await fetch(`/api/ship/${draftShipId}?date=${draftDate}`);
+  // NEW: Reactive Epochs based on API data
+  const shipEpochs = useMemo(() =>
+    shipTrackData ? shipTrackData.timestamps.map((t) => new Date(t).getTime()) : [],
+  [shipTrackData]);
 
-    // 1. Calculate the starting time index based on the chosen date
-    const targetEpoch = new Date(`${draftDate}T00:00:00Z`).getTime();
-    const startIndex = getClosestFrameIndex(targetEpoch);
+  const frameEpochs = useMemo(() =>
+    driftData ? driftData.frames.map((f) => new Date(f.time).getTime()) : [],
+  [driftData]);
 
-    // 2. Set the slider to the correct time and flip the switch!
-    setTimeIndex(startIndex);
-    setIsSimulating(true);
+  // --- DATA FETCHING ENGINE ---
+  const loadDataFromApi = async (targetDate: string, targetShipId: string) => {
+    setIsLoading(true);
+    try {
+      const [spillsRes, shipRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/spills/${targetDate}`),
+        fetch(`${API_BASE_URL}/ships/${targetShipId}/${targetDate}`)
+      ]);
+
+      if (!spillsRes.ok) throw new Error("Failed to fetch spills data.");
+      if (!shipRes.ok) throw new Error("Failed to fetch ship data.");
+
+      const spillsData = await spillsRes.json();
+      const shipData = await shipRes.json();
+
+      // /spills/{date} returns a list, grab the first one
+      if (spillsData && spillsData.length > 0) {
+        setDriftData(spillsData[0]);
+      } else {
+        alert("No spills found for this date.");
+        setDriftData(null);
+      }
+
+      setShipTrackData(shipData);
+      setIsPlaying(false);
+      setTimeIndex(0);
+      setIsSimulating(true);
+    } catch (error) {
+      console.error(error);
+      alert("Error loading data from API. Ensure FastAPI is running.");
+      setIsSimulating(false);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // NEW: Handle jumping between dates
+  const handleStartSimulation = () => {
+    if (!draftDate || !draftShipId) return;
+    loadDataFromApi(draftDate, draftShipId);
+  };
+
   const handleDateChange = (daysToAdd: number) => {
-    // 1. Calculate the new date string safely
     const current = new Date(`${draftDate}T12:00:00Z`);
     current.setUTCDate(current.getUTCDate() + daysToAdd);
     const newDateStr = current.toISOString().split("T")[0];
 
-    // 2. Update the form state
     setDraftDate(newDateStr);
-
-    // 3. TODO: In the next iteration, trigger your API calls here!
-    // const newDriftData = await fetch(`/api/spill?date=${newDateStr}`);
-    // const newShipData = await fetch(`/api/ship/${draftShipId}?date=${newDateStr}`);
-
-    // 4. Reset the UI state for the new incoming data
-    setIsPlaying(false);
-    setTimeIndex(0); // Resets the slider to the start of the new date
+    if (isSimulating) {
+      loadDataFromApi(newDateStr, draftShipId);
+    }
   };
 
   // --- THE AUTO-PLAY ENGINE ---
@@ -150,6 +156,7 @@ export default function App() {
 
   // --- 1. THE OIL SPILL ---
   const currentTracersGeoJSON = useMemo(() => {
+    if (!driftData || frames.length === 0) return emptyGeoJSON;
     const currentFrame = frames[timeIndex];
     return {
       type: "FeatureCollection",
@@ -159,32 +166,32 @@ export default function App() {
         properties: { mass_oil: p.mass_oil, status: p.status },
       })),
     };
-  }, [timeIndex, frames]);
+  }, [timeIndex, frames, driftData]);
 
   // --- 2. THE REAL SHIP (Synced to the Oil Spill Time) ---
   const { shipTrailGeoJSON, currentShip } = useMemo(() => {
+    if (!shipTrackData || frames.length === 0) return { shipTrailGeoJSON: emptyGeoJSON, currentShip: null };
+
     const currentSimTime = frames[timeIndex].time;
-    const closestIdx = getClosestShipIndex(currentSimTime);
+    // Utilize our new generic helper
+    const closestIdx = getClosestIndex(new Date(currentSimTime).getTime(), shipEpochs);
 
     const currentCoord = shipTrackData.coordinates[closestIdx];
     const currentCourse = shipTrackData.courses[closestIdx];
     const currentCollision = shipTrackData.collisions[closestIdx];
 
-    // NEW: Build the trail as individual color-coded segments!
     const segmentFeatures = [];
     for (let i = 0; i < closestIdx; i++) {
       segmentFeatures.push({
         type: "Feature",
         geometry: {
           type: "LineString",
-          // Draw a tiny line from point A to point B
           coordinates: [
             shipTrackData.coordinates[i],
             shipTrackData.coordinates[i + 1],
           ],
         },
         properties: {
-          // If the ship hit oil at point B, this segment paints red
           hasCollision: shipTrackData.collisions[i + 1],
         },
       });
@@ -199,10 +206,10 @@ export default function App() {
       },
       shipTrailGeoJSON: {
         type: "FeatureCollection",
-        features: segmentFeatures, // Pass our array of sliced segments
+        features: segmentFeatures,
       },
     };
-  }, [timeIndex, frames]);
+  }, [timeIndex, frames, shipTrackData, shipEpochs]);
 
   const formatTime = (isoString: string) => {
     return new Date(isoString).toLocaleString([], {
@@ -262,10 +269,9 @@ export default function App() {
 
             <input
               type="date"
-              min="2026-04-23"
-              max="2026-04-25"
               value={draftDate}
               onChange={(e) => setDraftDate(e.target.value)}
+              disabled={isLoading}
               style={{
                 padding: "8px 12px",
                 borderRadius: "6px",
@@ -276,19 +282,19 @@ export default function App() {
 
             <button
               onClick={handleStartSimulation}
-              disabled={!draftDate || !draftShipId}
+              disabled={!draftDate || !draftShipId || isLoading}
               style={{
                 padding: "10px",
                 borderRadius: "6px",
                 border: "none",
-                background: !draftDate || !draftShipId ? "#e5e7eb" : "#2563eb",
-                color: !draftDate || !draftShipId ? "#9ca3af" : "white",
+                background: !draftDate || !draftShipId || isLoading ? "#e5e7eb" : "#2563eb",
+                color: !draftDate || !draftShipId || isLoading ? "#9ca3af" : "white",
                 fontWeight: "bold",
-                cursor: !draftDate || !draftShipId ? "not-allowed" : "pointer",
+                cursor: !draftDate || !draftShipId || isLoading ? "not-allowed" : "pointer",
                 transition: "background 0.2s",
               }}
             >
-              Load Data
+              {isLoading ? "Fetching Data..." : "Load Data"}
             </button>
           </div>
         ) : (
@@ -504,9 +510,9 @@ export default function App() {
 
       <Map
         initialViewState={{
-          longitude: driftData.seed_lon,
-          latitude: driftData.seed_lat,
-          zoom: 9, // Zoomed out slightly to ensure we see the ship approach!
+          longitude: driftData ? driftData.seed_lon : 33.3, // Fallback Black Sea Lng
+          latitude: driftData ? driftData.seed_lat : 44.2,  // Fallback Black Sea Lat
+          zoom: 9, 
         }}
         mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
         style={{ width: "100%", height: "100%" }}
