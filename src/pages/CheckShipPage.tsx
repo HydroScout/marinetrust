@@ -3,7 +3,15 @@ import SimulationForm from "../components/SimulationForm/SimulationForm";
 import SimulationControls from "../components/SimulationControls/SimulationControls";
 import SpillMap from "../components/SpillMap/SpillMap";
 import type { DriftData, ShipTrackData } from "../types";
-import { API_BASE_URL, emptyGeoJSON, getClosestIndex } from "../utils";
+import {
+  API_BASE_URL,
+  emptyGeoJSON,
+  getClosestIndex,
+  parseNaiveTime,
+} from "../utils";
+
+const isFrameOnDate = (frameIso: string, targetDate: string) =>
+  frameIso.startsWith(targetDate);
 
 export default function CheckShipPage() {
   const [timeIndex, setTimeIndex] = useState(0);
@@ -21,7 +29,7 @@ export default function CheckShipPage() {
   const shipEpochs = useMemo(
     () =>
       shipTrackData
-        ? shipTrackData.timestamps.map((t) => new Date(t).getTime())
+        ? shipTrackData.timestamps.map((t) => parseNaiveTime(t).getTime())
         : [],
     [shipTrackData]
   );
@@ -41,15 +49,19 @@ export default function CheckShipPage() {
       const shipData = await shipRes.json();
 
       if (spillsData && spillsData.length > 0) {
-        setDriftData(spillsData[0]);
+        const drift = spillsData[0];
+        const framesForDate = drift.frames.filter((f: { time: string }) =>
+          isFrameOnDate(f.time, targetDate)
+        );
+        setDriftData({ ...drift, frames: framesForDate });
       } else {
         alert("No spills found for this date.");
         setDriftData(null);
       }
 
       setShipTrackData(shipData);
-      setIsPlaying(false);
       setTimeIndex(0);
+      setIsPlaying(false);
       setIsSimulating(true);
     } catch (error) {
       console.error(error);
@@ -113,7 +125,7 @@ export default function CheckShipPage() {
 
     const currentSimTime = frames[timeIndex].time;
     const closestIdx = getClosestIndex(
-      new Date(currentSimTime).getTime(),
+      parseNaiveTime(currentSimTime).getTime(),
       shipEpochs
     );
 

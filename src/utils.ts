@@ -17,8 +17,11 @@ export const getClosestIndex = (targetTimeMs: number, epochsArray: number[]) => 
   return closestIdx;
 };
 
+export const parseNaiveTime = (isoString: string) =>
+  new Date(isoString.replace(/Z$/, ""));
+
 export const formatTime = (isoString: string) => {
-  return new Date(isoString).toLocaleString([], {
+  return parseNaiveTime(isoString).toLocaleString([], {
     month: "short",
     day: "numeric",
     hour: "2-digit",
