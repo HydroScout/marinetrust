@@ -204,8 +204,7 @@ export default function CheckShipPage() {
       </div>
 
       <SpillMap
-        initialLongitude={driftData ? driftData.seed_lon : 33.3}
-        initialLatitude={driftData ? driftData.seed_lat : 44.2}
+        routeCoordinates={isSimulating ? shipTrackData?.coordinates ?? null : null}
         tracersGeoJSON={isSimulating ? currentTracersGeoJSON : null}
         shipTrailGeoJSON={isSimulating ? shipTrailGeoJSON : null}
         currentShip={isSimulating ? currentShip : null}

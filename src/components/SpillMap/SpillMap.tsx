@@ -1,29 +1,55 @@
+import { useEffect, useRef } from "react";
 import Map, { Source, Layer, Marker } from "react-map-gl/maplibre";
+import type { MapRef } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { CurrentShip } from "../../types";
 import { emptyGeoJSON } from "../../utils";
 
 interface SpillMapProps {
-  initialLongitude: number;
-  initialLatitude: number;
+  routeCoordinates: number[][] | null;
   tracersGeoJSON: any;
   shipTrailGeoJSON: any;
   currentShip: CurrentShip | null;
 }
 
 export default function SpillMap({
-  initialLongitude,
-  initialLatitude,
+  routeCoordinates,
   tracersGeoJSON,
   shipTrailGeoJSON,
   currentShip,
 }: SpillMapProps) {
+  const mapRef = useRef<MapRef>(null);
+
+  useEffect(() => {
+    if (!routeCoordinates || routeCoordinates.length === 0) return;
+
+    let minLng = Infinity;
+    let minLat = Infinity;
+    let maxLng = -Infinity;
+    let maxLat = -Infinity;
+    for (const [lng, lat] of routeCoordinates) {
+      if (lng < minLng) minLng = lng;
+      if (lat < minLat) minLat = lat;
+      if (lng > maxLng) maxLng = lng;
+      if (lat > maxLat) maxLat = lat;
+    }
+
+    mapRef.current?.fitBounds(
+      [
+        [minLng, minLat],
+        [maxLng, maxLat],
+      ],
+      { padding: 80, duration: 1000 }
+    );
+  }, [routeCoordinates]);
+
   return (
     <Map
+      ref={mapRef}
       initialViewState={{
-        longitude: initialLongitude,
-        latitude: initialLatitude,
-        zoom: 9,
+        longitude: 0,
+        latitude: 20,
+        zoom: 1,
       }}
       mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
       style={{ width: "100%", height: "100%" }}
