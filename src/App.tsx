@@ -1,61 +1,11 @@
 // src/App.tsx
 import { useState, useMemo, useEffect } from "react";
-import Map, { Source, Layer, Marker } from "react-map-gl/maplibre";
-import "maplibre-gl/dist/maplibre-gl.css";
 import NavBar from "./components/NavBar/NavBar";
-
-// Point this to your FastAPI server
-const API_BASE_URL = "http://localhost:8000";
-
-// --- TYPES ---
-interface DriftPoint {
-  particle_id: number;
-  lat: number;
-  lon: number;
-  status: string;
-  mass_oil: number;
-}
-
-interface DriftFrame {
-  time: string;
-  points: DriftPoint[];
-}
-
-interface DriftData {
-  job_id: string;
-  model: string;
-  seed_lon: number;
-  seed_lat: number;
-  seed_frame_index: number;
-  frames: DriftFrame[];
-}
-
-interface ShipTrackData {
-  timestamps: string[];
-  coordinates: number[][];
-  speeds: number[];
-  courses: number[];
-  collisions: boolean[];
-}
-
-// --- PURE HELPER FUNCTION ---
-// Replaces the old hardcoded getClosestFrameIndex / getClosestShipIndex
-const getClosestIndex = (targetTimeMs: number, epochsArray: number[]) => {
-  let closestIdx = 0;
-  let minDiff = Infinity;
-  for (let i = 0; i < epochsArray.length; i++) {
-    const diff = Math.abs(epochsArray[i] - targetTimeMs);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closestIdx = i;
-    } else if (diff > minDiff) {
-      break; // Array is sorted, break early
-    }
-  }
-  return closestIdx;
-};
-
-const emptyGeoJSON = { type: "FeatureCollection", features: [] };
+import SimulationForm from "./components/SimulationForm/SimulationForm";
+import SimulationControls from "./components/SimulationControls/SimulationControls";
+import SpillMap from "./components/SpillMap/SpillMap";
+import type { DriftData, ShipTrackData } from "./types";
+import { API_BASE_URL, emptyGeoJSON, getClosestIndex } from "./utils";
 
 export default function App() {
   const [timeIndex, setTimeIndex] = useState(0);
@@ -64,30 +14,26 @@ export default function App() {
   const [isSimulating, setIsSimulating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // NEW: API Data and Loading States
   const [isLoading, setIsLoading] = useState(false);
   const [driftData, setDriftData] = useState<DriftData | null>(null);
   const [shipTrackData, setShipTrackData] = useState<ShipTrackData | null>(null);
 
-  // Safely extract frames (defaults to empty array if no data)
   const frames = driftData?.frames || [];
 
-  // NEW: Reactive Epochs based on API data
-  const shipEpochs = useMemo(() =>
-    shipTrackData ? shipTrackData.timestamps.map((t) => new Date(t).getTime()) : [],
-  [shipTrackData]);
+  const shipEpochs = useMemo(
+    () =>
+      shipTrackData
+        ? shipTrackData.timestamps.map((t) => new Date(t).getTime())
+        : [],
+    [shipTrackData]
+  );
 
-  const frameEpochs = useMemo(() =>
-    driftData ? driftData.frames.map((f) => new Date(f.time).getTime()) : [],
-  [driftData]);
-
-  // --- DATA FETCHING ENGINE ---
   const loadDataFromApi = async (targetDate: string, targetShipId: string) => {
     setIsLoading(true);
     try {
       const [spillsRes, shipRes] = await Promise.all([
         fetch(`${API_BASE_URL}/spills/${targetDate}`),
-        fetch(`${API_BASE_URL}/ships/${targetShipId}/${targetDate}`)
+        fetch(`${API_BASE_URL}/ships/${targetShipId}/${targetDate}`),
       ]);
 
       if (!spillsRes.ok) throw new Error("Failed to fetch spills data.");
@@ -96,7 +42,6 @@ export default function App() {
       const spillsData = await spillsRes.json();
       const shipData = await shipRes.json();
 
-      // /spills/{date} returns a list, grab the first one
       if (spillsData && spillsData.length > 0) {
         setDriftData(spillsData[0]);
       } else {
@@ -122,7 +67,7 @@ export default function App() {
     loadDataFromApi(draftDate, draftShipId);
   };
 
-  const handleDateChange = (daysToAdd: number) => {
+  const handleDateShift = (daysToAdd: number) => {
     const current = new Date(`${draftDate}T12:00:00Z`);
     current.setUTCDate(current.getUTCDate() + daysToAdd);
     const newDateStr = current.toISOString().split("T")[0];
@@ -133,28 +78,24 @@ export default function App() {
     }
   };
 
-  // --- THE AUTO-PLAY ENGINE ---
   useEffect(() => {
     let interval: NodeJS.Timeout;
 
     if (isPlaying && isSimulating) {
       interval = setInterval(() => {
         setTimeIndex((prev) => {
-          // If we hit the final frame, pause the playback automatically
           if (prev >= frames.length - 1) {
             setIsPlaying(false);
             return prev;
           }
           return prev + 1;
         });
-      }, 300); // 300ms per frame. Lower this number to make it play faster!
+      }, 300);
     }
 
-    // Cleanup the timer when paused or unmounted
     return () => clearInterval(interval);
   }, [isPlaying, isSimulating, frames.length]);
 
-  // --- 1. THE OIL SPILL ---
   const currentTracersGeoJSON = useMemo(() => {
     if (!driftData || frames.length === 0) return emptyGeoJSON;
     const currentFrame = frames[timeIndex];
@@ -168,13 +109,15 @@ export default function App() {
     };
   }, [timeIndex, frames, driftData]);
 
-  // --- 2. THE REAL SHIP (Synced to the Oil Spill Time) ---
   const { shipTrailGeoJSON, currentShip } = useMemo(() => {
-    if (!shipTrackData || frames.length === 0) return { shipTrailGeoJSON: emptyGeoJSON, currentShip: null };
+    if (!shipTrackData || frames.length === 0)
+      return { shipTrailGeoJSON: emptyGeoJSON, currentShip: null };
 
     const currentSimTime = frames[timeIndex].time;
-    // Utilize our new generic helper
-    const closestIdx = getClosestIndex(new Date(currentSimTime).getTime(), shipEpochs);
+    const closestIdx = getClosestIndex(
+      new Date(currentSimTime).getTime(),
+      shipEpochs
+    );
 
     const currentCoord = shipTrackData.coordinates[closestIdx];
     const currentCourse = shipTrackData.courses[closestIdx];
@@ -211,395 +154,67 @@ export default function App() {
     };
   }, [timeIndex, frames, shipTrackData, shipEpochs]);
 
-  const formatTime = (isoString: string) => {
-    return new Date(isoString).toLocaleString([], {
-      timeZone: "UTC",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
   return (
     <main style={{ width: "100vw", height: "100vh", display: "flex" }}>
       <NavBar />
 
       <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
-      {/* THE FLOATING UI PANEL */}
-      <div
-        style={{
-          position: "absolute",
-          top: 24,
-          left: 24,
-          zIndex: 10,
-          background: "white",
-          padding: "20px 24px",
-          borderRadius: "8px",
-          boxShadow:
-            "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)", // Slightly deeper shadow for a side-panel
-          width: "350px",
-          minHeight: "140px",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-        }}
-      >
-        {!isSimulating ? (
-          /* --- STATE 1: THE API FORM --- */
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "12px" }}
-          >
-            <h3 style={{ margin: "0", fontSize: "1.1rem", color: "#111827" }}>
-              Configure Simulation
-            </h3>
-
-            <input
-              type="text"
-              placeholder="Enter Ship ID (e.g., IMO 9123456)"
-              value={draftShipId}
-              onChange={(e) => setDraftShipId(e.target.value)}
-              style={{
-                padding: "8px 12px",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                fontSize: "0.9rem",
+        <div
+          style={{
+            position: "absolute",
+            top: 24,
+            left: 24,
+            zIndex: 10,
+            background: "white",
+            padding: "20px 24px",
+            borderRadius: "8px",
+            boxShadow:
+              "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+            width: "350px",
+            minHeight: "140px",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+          }}
+        >
+          {!isSimulating ? (
+            <SimulationForm
+              shipId={draftShipId}
+              date={draftDate}
+              isLoading={isLoading}
+              onShipIdChange={setDraftShipId}
+              onDateChange={setDraftDate}
+              onSubmit={handleStartSimulation}
+            />
+          ) : (
+            <SimulationControls
+              date={draftDate}
+              shipId={draftShipId}
+              currentTimeIso={frames[timeIndex].time}
+              timeIndex={timeIndex}
+              framesLength={frames.length}
+              isPlaying={isPlaying}
+              onPlayToggle={() => setIsPlaying(!isPlaying)}
+              onTimeIndexChange={(idx) => {
+                setIsPlaying(false);
+                setTimeIndex(idx);
+              }}
+              onDateShift={handleDateShift}
+              onReset={() => {
+                setIsSimulating(false);
+                setIsPlaying(false);
               }}
             />
+          )}
+        </div>
 
-            <input
-              type="date"
-              value={draftDate}
-              onChange={(e) => setDraftDate(e.target.value)}
-              disabled={isLoading}
-              style={{
-                padding: "8px 12px",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                fontSize: "0.9rem",
-              }}
-            />
-
-            <button
-              onClick={handleStartSimulation}
-              disabled={!draftDate || !draftShipId || isLoading}
-              style={{
-                padding: "10px",
-                borderRadius: "6px",
-                border: "none",
-                background: !draftDate || !draftShipId || isLoading ? "#e5e7eb" : "#2563eb",
-                color: !draftDate || !draftShipId || isLoading ? "#9ca3af" : "white",
-                fontWeight: "bold",
-                cursor: !draftDate || !draftShipId || isLoading ? "not-allowed" : "pointer",
-                transition: "background 0.2s",
-              }}
-            >
-              {isLoading ? "Fetching Data..." : "Load Data"}
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* NEW: Date Navigation Header */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "16px",
-                paddingBottom: "12px",
-                borderBottom: "1px solid #f3f4f6",
-              }}
-            >
-              {/* Previous Day Button */}
-              <button
-                onClick={() => handleDateChange(-1)}
-                style={{
-                  background: "#f9fafb",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  color: "#4b5563",
-                  padding: "6px",
-                  display: "flex",
-                  alignItems: "center",
-                  transition: "background 0.2s",
-                }}
-                onMouseOver={(e) =>
-                  (e.currentTarget.style.background = "#f3f4f6")
-                }
-                onMouseOut={(e) =>
-                  (e.currentTarget.style.background = "#f9fafb")
-                }
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M15 18l-6-6 6-6" />
-                </svg>
-              </button>
-
-              {/* Centered Info Block */}
-              <div style={{ textAlign: "center" }}>
-                <div
-                  style={{
-                    fontSize: "0.75rem",
-                    color: "#6b7280",
-                    fontWeight: "bold",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                  }}
-                >
-                  {draftDate} • {draftShipId}
-                </div>
-                <h3
-                  style={{
-                    margin: "4px 0 0 0",
-                    fontSize: "1.1rem",
-                    color: "#3b82f6",
-                  }}
-                >
-                  {formatTime(frames[timeIndex].time)}
-                </h3>
-              </div>
-
-              {/* Next Day Button */}
-              <button
-                onClick={() => handleDateChange(1)}
-                style={{
-                  background: "#f9fafb",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  color: "#4b5563",
-                  padding: "6px",
-                  display: "flex",
-                  alignItems: "center",
-                  transition: "background 0.2s",
-                }}
-                onMouseOver={(e) =>
-                  (e.currentTarget.style.background = "#f3f4f6")
-                }
-                onMouseOut={(e) =>
-                  (e.currentTarget.style.background = "#f9fafb")
-                }
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M9 18l6-6-6-6" />
-                </svg>
-              </button>
-            </div>
-
-            {/* NEW: Play Button and Slider Flex Container */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                marginBottom: "12px",
-              }}
-            >
-              <button
-                onClick={() => setIsPlaying(!isPlaying)}
-                style={{
-                  background: isPlaying ? "#ef4444" : "#10b981",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "50%",
-                  width: "32px",
-                  height: "32px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  flexShrink: 0,
-                  transition: "background 0.2s ease, transform 0.1s ease",
-                }}
-                onMouseDown={(e) =>
-                  (e.currentTarget.style.transform = "scale(0.95)")
-                }
-                onMouseUp={(e) =>
-                  (e.currentTarget.style.transform = "scale(1)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.transform = "scale(1)")
-                }
-              >
-                {isPlaying ? (
-                  // Sleek Pause SVG
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                  >
-                    <path d="M6 4h4v16H6zm8 0h4v16h-4z" />
-                  </svg>
-                ) : (
-                  // Sleek Play SVG (with optical centering)
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    style={{ marginLeft: "2px" }}
-                  >
-                    <path d="M5 3l14 9-14 9V3z" />
-                  </svg>
-                )}
-              </button>
-
-              <input
-                type="range"
-                min={0}
-                max={frames.length - 1}
-                value={timeIndex}
-                onChange={(e) => {
-                  // If the user manually grabs the slider, instantly pause the auto-play
-                  setIsPlaying(false);
-                  setTimeIndex(Number(e.target.value));
-                }}
-                style={{ width: "100%", cursor: "pointer" }}
-              />
-            </div>
-
-            <div
-              style={{
-                fontSize: "0.85rem",
-                color: "#4b5563",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <button
-                onClick={() => {
-                  setIsSimulating(false);
-                  setIsPlaying(false); // Ensure playback stops if we exit simulation mode
-                }}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#ef4444",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  padding: 0,
-                }}
-              >
-                Reset
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-
-      <Map
-        initialViewState={{
-          longitude: driftData ? driftData.seed_lon : 33.3, // Fallback Black Sea Lng
-          latitude: driftData ? driftData.seed_lat : 44.2,  // Fallback Black Sea Lat
-          zoom: 9, 
-        }}
-        mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-        style={{ width: "100%", height: "100%" }}
-      >
-        {/* --- 1. DYNAMIC OIL SPILL LAYER --- */}
-        <Source
-          id="tracers-source"
-          type="geojson"
-          data={isSimulating ? currentTracersGeoJSON : (emptyGeoJSON as any)}
-        >
-          <Layer
-            id="tracers-layer"
-            type="circle"
-            paint={{
-              "circle-radius": 5,
-              "circle-color": [
-                "match",
-                ["get", "status"],
-                "stranded",
-                "#ef4444",
-                "#1f2937",
-              ],
-              "circle-opacity": [
-                "interpolate",
-                ["linear"],
-                ["get", "mass_oil"],
-                0,
-                0.2,
-                1,
-                0.8,
-              ],
-              "circle-blur": 0.6,
-            }}
-          />
-        </Source>
-
-        {/* --- 2. SHIP TRAIL LAYER --- */}
-        <Source
-          id="ship-trail-source"
-          type="geojson"
-          data={isSimulating ? shipTrailGeoJSON : (emptyGeoJSON as any)}
-        >
-          <Layer
-            id="ship-trail-layer"
-            type="line"
-            paint={{
-              // NEW: Data-driven styling for the track history!
-              "line-color": [
-                "case",
-                ["get", "hasCollision"],
-                "#ef4444", // Red if it drove through oil
-                "#9ca3af", // Standard grey if the water was clear
-              ],
-              "line-width": 2,
-              "line-dasharray": [3, 2],
-              "line-opacity": 0.8,
-            }}
-          />
-        </Source>
-
-        {/* --- 3. DYNAMIC SHIP MARKER WITH ROTATION --- */}
-        {isSimulating && (
-          <Marker
-            longitude={currentShip.longitude}
-            latitude={currentShip.latitude}
-            anchor="center"
-          >
-            <div
-              style={{
-                transform: `rotate(${currentShip.course}deg)`,
-                transition: "transform 0.2s ease-out, fill 0.3s ease", // Added fill transition
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                // NEW: Data-driven styling! Red if collision, Dark Grey if safe.
-                fill={currentShip.hasCollision ? "#ef4444" : "#111827"}
-                style={{ filter: "drop-shadow(0px 2px 2px rgba(0,0,0,0.3))" }}
-              >
-                <path d="M12 2 L4 20 L12 17 L20 20 Z" />
-              </svg>
-            </div>
-          </Marker>
-        )}
-      </Map>
+        <SpillMap
+          initialLongitude={driftData ? driftData.seed_lon : 33.3}
+          initialLatitude={driftData ? driftData.seed_lat : 44.2}
+          tracersGeoJSON={isSimulating ? currentTracersGeoJSON : null}
+          shipTrailGeoJSON={isSimulating ? shipTrailGeoJSON : null}
+          currentShip={isSimulating ? currentShip : null}
+        />
       </div>
     </main>
   );
