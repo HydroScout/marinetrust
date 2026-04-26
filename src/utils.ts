@@ -1,4 +1,4 @@
-export const API_BASE_URL = "https://marinetrustbe.onrender.com/";
+export const API_BASE_URL = "https://marinetrustbe.onrender.com";
 
 export const emptyGeoJSON = { type: "FeatureCollection", features: [] };
 
