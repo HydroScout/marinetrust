@@ -4,12 +4,14 @@ import homeIcon from "../../assets/home-icon-silhouette.png";
 import boatIcon from "../../assets/boat.png";
 import warningIcon from "../../assets/warning.png";
 
-export type NavTab = "home" | "follow" | "flagged";
+export type NavTab = "home" | "follow" | "flagged" | "sea-planner";
 
 const TABS: { id: NavTab; label: string; icon: string; path: string }[] = [
   { id: "home", label: "Home", icon: homeIcon, path: "/" },
   { id: "follow", label: "Check a ship", icon: boatIcon, path: "/check-ship" },
   { id: "flagged", label: "Flagged incidents", icon: warningIcon, path: "/flagged" },
+  // Waze for Sea — additive entry; existing tabs above are unchanged.
+  { id: "sea-planner", label: "Waze for Sea", icon: boatIcon, path: "/sea-planner" },
 ];
 
 export default function NavBar() {
