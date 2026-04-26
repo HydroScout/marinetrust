@@ -34,3 +34,10 @@ export interface CurrentShip {
   course: number;
   hasCollision: boolean;
 }
+
+export interface FlaggedShip {
+  id: number;
+  name: string;
+  type: string;
+  flaggedDate: string;
+}

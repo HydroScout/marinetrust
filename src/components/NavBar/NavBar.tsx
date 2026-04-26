@@ -9,7 +9,7 @@ export type NavTab = "home" | "follow" | "flagged";
 const TABS: { id: NavTab; label: string; icon: string; path: string }[] = [
   { id: "home", label: "Home", icon: homeIcon, path: "/" },
   { id: "follow", label: "Check a ship", icon: boatIcon, path: "/check-ship" },
-  { id: "flagged", label: "Flagged ships", icon: warningIcon, path: "/flagged" },
+  { id: "flagged", label: "Flagged incidents", icon: warningIcon, path: "/flagged" },
 ];
 
 export default function NavBar() {

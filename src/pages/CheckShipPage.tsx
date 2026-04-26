@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import SimulationForm from "../components/SimulationForm/SimulationForm";
 import SimulationControls from "../components/SimulationControls/SimulationControls";
 import SpillMap from "../components/SpillMap/SpillMap";
@@ -13,10 +14,15 @@ import {
 const isFrameOnDate = (frameIso: string, targetDate: string) =>
   frameIso.startsWith(targetDate);
 
+type CheckShipNavState = { shipId?: string; date?: string } | null;
+
 export default function CheckShipPage() {
+  const location = useLocation();
+  const navState = location.state as CheckShipNavState;
+
   const [timeIndex, setTimeIndex] = useState(0);
-  const [draftDate, setDraftDate] = useState("");
-  const [draftShipId, setDraftShipId] = useState("");
+  const [draftDate, setDraftDate] = useState(navState?.date ?? "");
+  const [draftShipId, setDraftShipId] = useState(navState?.shipId ?? "");
   const [isSimulating, setIsSimulating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
