@@ -19,7 +19,6 @@ export const getClosestIndex = (targetTimeMs: number, epochsArray: number[]) => 
 
 export const formatTime = (isoString: string) => {
   return new Date(isoString).toLocaleString([], {
-    timeZone: "UTC",
     month: "short",
     day: "numeric",
     hour: "2-digit",
