@@ -1,31 +1,21 @@
 import { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import homeIcon from "../../assets/home-icon-silhouette.png";
 import boatIcon from "../../assets/boat.png";
 import warningIcon from "../../assets/warning.png";
 
 export type NavTab = "home" | "follow" | "flagged";
 
-interface NavBarProps {
-  activeTab?: NavTab;
-  onTabChange?: (tab: NavTab) => void;
-}
-
-const TABS: { id: NavTab; label: string; icon: string }[] = [
-  { id: "home", label: "Home", icon: homeIcon },
-  { id: "follow", label: "Check a ship", icon: boatIcon },
-  { id: "flagged", label: "Flagged ships", icon: warningIcon },
+const TABS: { id: NavTab; label: string; icon: string; path: string }[] = [
+  { id: "home", label: "Home", icon: homeIcon, path: "/" },
+  { id: "follow", label: "Check a ship", icon: boatIcon, path: "/check-ship" },
+  { id: "flagged", label: "Flagged ships", icon: warningIcon, path: "/flagged" },
 ];
 
-export default function NavBar({ activeTab, onTabChange }: NavBarProps) {
+export default function NavBar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [internalActive, setInternalActive] = useState<NavTab>("home");
-
-  const current = activeTab ?? internalActive;
-
-  const handleSelect = (tab: NavTab) => {
-    if (onTabChange) onTabChange(tab);
-    else setInternalActive(tab);
-  };
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const width = isCollapsed ? 64 : 220;
 
@@ -103,11 +93,11 @@ export default function NavBar({ activeTab, onTabChange }: NavBarProps) {
 
       <div style={{ display: "flex", flexDirection: "column", padding: "8px" }}>
         {TABS.map((tab) => {
-          const isActive = current === tab.id;
+          const isActive = location.pathname === tab.path;
           return (
             <button
               key={tab.id}
-              onClick={() => handleSelect(tab.id)}
+              onClick={() => navigate(tab.path)}
               title={isCollapsed ? tab.label : undefined}
               style={{
                 display: "flex",
