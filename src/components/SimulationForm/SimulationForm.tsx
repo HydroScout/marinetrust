@@ -23,18 +23,44 @@ export default function SimulationForm({
         Configure Simulation
       </h3>
 
-      <input
-        type="text"
-        placeholder="Enter Ship ID (e.g., IMO 9123456)"
-        value={shipId}
-        onChange={(e) => onShipIdChange(e.target.value)}
+      <div
         style={{
-          padding: "8px 12px",
+          display: "flex",
+          alignItems: "stretch",
           borderRadius: "6px",
           border: "1px solid #d1d5db",
-          fontSize: "0.9rem",
+          overflow: "hidden",
         }}
-      />
+      >
+        <span
+          style={{
+            display: "flex",
+            alignItems: "center",
+            padding: "0 12px",
+            background: "#f3f4f6",
+            color: "#6b7280",
+            fontSize: "0.9rem",
+            fontWeight: 500,
+            borderRight: "1px solid #d1d5db",
+          }}
+        >
+          IMO
+        </span>
+        <input
+          type="text"
+          placeholder="e.g., 9123456"
+          value={shipId}
+          onChange={(e) => onShipIdChange(e.target.value)}
+          style={{
+            flex: 1,
+            padding: "8px 12px",
+            border: "none",
+            outline: "none",
+            fontSize: "0.9rem",
+            minWidth: 0,
+          }}
+        />
+      </div>
 
       <input
         type="date"
