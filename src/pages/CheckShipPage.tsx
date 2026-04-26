@@ -95,7 +95,7 @@ export default function CheckShipPage() {
   };
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setTimeout>;
 
     if (isPlaying && isSimulating) {
       interval = setInterval(() => {
